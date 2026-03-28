@@ -1,105 +1,113 @@
+// server.js
 const express = require("express");
+const cors = require("cors");
 const crypto = require("crypto");
 
 const app = express();
-app.use(express.json());
+app.use(cors()); // permite fetch desde cualquier origen
+app.use(express.json()); // necesario para POST desde admin
 
-const cors = require("cors"); // importa CORS
-app.use(cors());              // permite que cualquier web acceda a tu API
-
-// 🔐 SECRETO (NO LO CAMBIES EN PRODUCCIÓN)
-const SECRET = "BERENE_SECRET_2026";
-
-
-// 🧠 Base de datos en memoria
-let licencias = {};
-
-// 🔤 Caracteres permitidos
-const CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-// 🔢 Generar bloque tipo XXXX (letras + números)
-function generarBloque() {
-    let resultado = "";
-    for (let i = 0; i < 4; i++) {
-        const randomIndex = Math.floor(Math.random() * CHARS.length);
-        resultado += CHARS[randomIndex];
-    }
-    return resultado;
-}
-
-// 🔑 Generar licencia: BERENE-XXXX-XXXX-SUBS
-function generarLicencia() {
-    const parte1 = generarBloque();
-    const parte2 = generarBloque();
-
-    return `BERENE-${parte1}-${parte2}-SUBS`;
-}
-
-// 🔍 Validar formato
-function validarFormato(clave) {
-    const regex = /^BERENE-[A-Z0-9]{4}-[A-Z0-9]{4}-SUBS$/;
-    return regex.test(clave);
-}
-
-// 📡 Crear licencia
-app.post("/crear", (req, res) => {
-    const clave = generarLicencia();
-
-    licencias[clave] = {
-        activa: true,
-        dispositivos: 2,
-        usados: []
-    };
-
-    res.json({ clave });
-});
-
-// 📡 Validar licencia
-app.post("/validar", (req, res) => {
-    const { clave, deviceID } = req.body;
-
-    // ❌ Formato inválido
-    if (!validarFormato(clave)) {
-        return res.json({ valido: false, razon: "formato invalido" });
-    }
-
-    const lic = licencias[clave];
-
-    // ❌ No existe o cancelada
-    if (!lic || !lic.activa) {
-        return res.json({ valido: false });
-    }
-
-    // 📱 Control de dispositivos
-    if (deviceID) {
-        if (!lic.usados.includes(deviceID)) {
-            if (lic.usados.length >= lic.dispositivos) {
-                return res.json({ valido: false, razon: "limite dispositivos" });
-            }
-            lic.usados.push(deviceID);
-        }
-    }
-
-    res.json({ valido: true });
-});
-
-// ❌ Cancelar licencia
-app.post("/cancelar", (req, res) => {
-    const { clave } = req.body;
-
-    if (licencias[clave]) {
-        licencias[clave].activa = false;
-        return res.json({ ok: true });
-    }
-
-    res.json({ ok: false });
-});
-
-// 📋 Ver todas las licencias
-app.get("/licencias", (req, res) => {
-    res.json(licencias);
-});
-
-// 🚀 Iniciar servidor
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Servidor listo"));
+
+// ---- Licencias en memoria ----
+let licencias = []; 
+// cada licencia: { clave: "BERENE-XXXX-XXXX-SUBS", deviceIDs: [], activa: true }
+
+// ---- Generar nueva licencia ----
+function generarLicencia() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  function parte(n) {
+    let s = "";
+    for (let i = 0; i < n; i++) {
+      s += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return s;
+  }
+  return `BERENE-${parte(4)}-${parte(4)}-SUBS`;
+}
+
+// --------------------
+// ----- GET para TurboWarp / Scratch -----
+// --------------------
+
+// Crear licencia (GET)
+app.get("/crear", (req, res) => {
+  const nueva = { clave: generarLicencia(), deviceIDs: [], activa: true };
+  licencias.push(nueva);
+  res.json({ success: true, licencia: nueva.clave });
+});
+
+// Validar licencia (GET)
+app.get("/validar", (req, res) => {
+  const { clave, deviceID } = req.query;
+  if (!clave || !deviceID) return res.json({ valida: false, error: "Falta clave o deviceID" });
+
+  const licencia = licencias.find(l => l.clave === clave && l.activa);
+  if (!licencia) return res.json({ valida: false });
+
+  // registrar deviceID si no existe
+  if (!licencia.deviceIDs.includes(deviceID)) {
+    licencia.deviceIDs.push(deviceID);
+  }
+
+  res.json({ valida: true, clave, deviceID });
+});
+
+// Cancelar licencia (GET)
+app.get("/cancelar", (req, res) => {
+  const { clave } = req.query;
+  const licencia = licencias.find(l => l.clave === clave);
+  if (!licencia) return res.json({ success: false });
+  licencia.activa = false;
+  res.json({ success: true });
+});
+
+// Listar licencias (GET) - solo info mínima
+app.get("/licencias", (req, res) => {
+  const lista = licencias.map(l => ({ clave: l.clave, activa: l.activa, dispositivos: l.deviceIDs.length }));
+  res.json({ success: true, licencias: lista });
+});
+
+// --------------------
+// ----- POST para HTML Admin -----
+// --------------------
+
+// Crear licencia
+app.post("/crear", (req, res) => {
+  const nueva = { clave: generarLicencia(), deviceIDs: [], activa: true };
+  licencias.push(nueva);
+  res.json({ success: true, licencia: nueva.clave });
+});
+
+// Validar licencia
+app.post("/validar", (req, res) => {
+  const { clave, deviceID } = req.body;
+  if (!clave || !deviceID) return res.json({ valida: false, error: "Falta clave o deviceID" });
+
+  const licencia = licencias.find(l => l.clave === clave && l.activa);
+  if (!licencia) return res.json({ valida: false });
+
+  if (!licencia.deviceIDs.includes(deviceID)) {
+    licencia.deviceIDs.push(deviceID);
+  }
+
+  res.json({ valida: true, clave, deviceID });
+});
+
+// Cancelar licencia
+app.post("/cancelar", (req, res) => {
+  const { clave } = req.body;
+  const licencia = licencias.find(l => l.clave === clave);
+  if (!licencia) return res.json({ success: false });
+  licencia.activa = false;
+  res.json({ success: true });
+});
+
+// Listar licencias (POST)
+app.post("/licencias", (req, res) => {
+  const lista = licencias.map(l => ({ clave: l.clave, activa: l.activa, dispositivos: l.deviceIDs.length }));
+  res.json({ success: true, licencias: lista });
+});
+
+// --------------------
+app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
