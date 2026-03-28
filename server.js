@@ -4,6 +4,9 @@ const crypto = require("crypto");
 const app = express();
 app.use(express.json());
 
+const cors = require("cors"); // importa CORS
+app.use(cors());              // permite que cualquier web acceda a tu API
+
 // 🔐 SECRETO (NO LO CAMBIES EN PRODUCCIÓN)
 const SECRET = "BERENE_SECRET_2026";
 
