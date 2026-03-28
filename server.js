@@ -7,10 +7,6 @@ app.use(express.json());
 // 🔐 SECRETO (NO LO CAMBIES EN PRODUCCIÓN)
 const SECRET = "BERENE_SECRET_2026";
 
-const express = require("express");
-const app = express();
-
-app.use(express.json());
 
 // 🧠 Base de datos en memoria
 let licencias = {};
